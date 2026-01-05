@@ -422,13 +422,22 @@ export default function Home() {
 		const newBalance = Number(settingsStartingBalance) || 0;
 		saveUserStartingBalance(newBalance);
 		
-		// If we're on January and it doesn't have a saved starting balance, update it
+		// If we're on January, update January's starting balance to the new default
 		if (monthIndex === 0 && isInitialized) {
 			const savedData = loadMonthData(0);
-			if (savedData && savedData.startingBalance === undefined) {
+			if (savedData) {
+				// Update January's starting balance to the new default
 				setStartingBalance(newBalance);
 				saveMonthData(0, {
 					...savedData,
+					startingBalance: newBalance,
+				});
+			} else {
+				// If no data exists for January, create it with the new balance
+				setStartingBalance(newBalance);
+				saveMonthData(0, {
+					expenseRows: initialExpenseRows,
+					incomeRows: initialIncomeRows,
 					startingBalance: newBalance,
 				});
 			}
