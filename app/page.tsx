@@ -99,40 +99,66 @@ const clearAllBudgetData = () => {
 	}
 };
 
+// Helper functions for user's default starting balance preference
+const getUserStartingBalance = (): number => {
+	if (typeof window === "undefined") return 0;
+	try {
+		const saved = localStorage.getItem("budget-user-starting-balance");
+		if (saved) {
+			return Number(saved);
+		}
+	} catch (error) {
+		console.error("Error loading user starting balance:", error);
+	}
+	return 0;
+};
+
+const saveUserStartingBalance = (balance: number) => {
+	if (typeof window === "undefined") return;
+	try {
+		localStorage.setItem("budget-user-starting-balance", balance.toString());
+	} catch (error) {
+		console.error("Error saving user starting balance:", error);
+	}
+};
+
 export default function Home() {
 	const [expenseRows, setExpenseRows] = useState<BudgetRow[]>(initialExpenseRows);
 	const [incomeRows, setIncomeRows] = useState<BudgetRow[]>(initialIncomeRows);
 	const [monthIndex, setMonthIndex] = useState<number>(new Date().getMonth());
-	const [startingBalance, setStartingBalance] = useState<number>(1579);
+	const [startingBalance, setStartingBalance] = useState<number>(0);
 	const [isInitialized, setIsInitialized] = useState(false);
+	const [showSettingsModal, setShowSettingsModal] = useState(false);
+	const [settingsStartingBalance, setSettingsStartingBalance] = useState<string>("0");
 
 	useEffect(() => {
 		//clearAllBudgetData();
 		
+		const userDefaultBalance = getUserStartingBalance();
 		const currentMonthIndex = new Date().getMonth();
 		const savedData = loadMonthData(currentMonthIndex);
 		
-		// January (monthIndex 0) always starts with initial value, never from December
+		// January (monthIndex 0) always starts with user's default value, never from December
 		if (currentMonthIndex === 0) {
 			if (savedData) {
 				setExpenseRows(savedData.expenseRows);
 				setIncomeRows(savedData.incomeRows);
-				// January always uses 1579 if not set, or the saved value if it exists
-				setStartingBalance(savedData.startingBalance ?? 1579);
+				// January always uses user's default if not set, or the saved value if it exists
+				setStartingBalance(savedData.startingBalance ?? userDefaultBalance);
 				if (savedData.startingBalance === undefined) {
 					saveMonthData(currentMonthIndex, {
 						...savedData,
-						startingBalance: 1579,
+						startingBalance: userDefaultBalance,
 					});
 				}
 			} else {
 				setExpenseRows(initialExpenseRows);
 				setIncomeRows(initialIncomeRows);
-				setStartingBalance(1579);
+				setStartingBalance(userDefaultBalance);
 				saveMonthData(currentMonthIndex, {
 					expenseRows: initialExpenseRows,
 					incomeRows: initialIncomeRows,
-					startingBalance: 1579,
+					startingBalance: userDefaultBalance,
 				});
 			}
 		} else {
@@ -147,7 +173,7 @@ export default function Home() {
 					// Only calculate from previous month if startingBalance doesn't exist
 					const prevMonthIndex = currentMonthIndex - 1;
 					const prevData = loadMonthData(prevMonthIndex);
-					let newStarting = 1579;
+					let newStarting = userDefaultBalance;
 					if (prevData && prevData.startingBalance !== undefined) {
 						const prevIncome = prevData.incomeRows.reduce(
 							(sum, row) => sum + (row.actual ? Number(row.actual) : 0),
@@ -172,7 +198,7 @@ export default function Home() {
 				setIncomeRows(initialIncomeRows);
 				const prevMonthIndex = currentMonthIndex - 1;
 				const prevData = loadMonthData(prevMonthIndex);
-				let newStarting = 1579;
+				let newStarting = userDefaultBalance;
 				if (prevData && prevData.startingBalance !== undefined) {
 					const prevIncome = prevData.incomeRows.reduce(
 						(sum, row) => sum + (row.actual ? Number(row.actual) : 0),
@@ -341,23 +367,24 @@ export default function Home() {
 			// Set ending balance as next month's starting balance (carry over)
 			const nextMonthIndex = (monthIndex + 1) % monthNames.length;
 			
-			// January (monthIndex 0) always starts with initial value, not from December
+			// January (monthIndex 0) always starts with user's default value, not from December
 			if (nextMonthIndex === 0) {
+				const userDefaultBalance = getUserStartingBalance();
 				const nextData = loadMonthData(nextMonthIndex);
 				if (nextData) {
 					// January already exists - only update if startingBalance is not set
 					if (nextData.startingBalance === undefined) {
 						saveMonthData(nextMonthIndex, {
 							...nextData,
-							startingBalance: 1579,
+							startingBalance: userDefaultBalance,
 						});
 					}
 				} else {
-					// Create January with initial starting balance
+					// Create January with user's default starting balance
 					saveMonthData(nextMonthIndex, {
 						expenseRows: initialExpenseRows,
 						incomeRows: initialIncomeRows,
-						startingBalance: 1579,
+						startingBalance: userDefaultBalance,
 					});
 				}
 			} else {
@@ -380,6 +407,34 @@ export default function Home() {
 			}
 		}
 		setMonthIndex((prev) => (prev + 1) % monthNames.length);
+	};
+
+	const handleOpenSettings = () => {
+		setSettingsStartingBalance(getUserStartingBalance().toString());
+		setShowSettingsModal(true);
+	};
+
+	const handleCloseSettings = () => {
+		setShowSettingsModal(false);
+	};
+
+	const handleSaveSettings = () => {
+		const newBalance = Number(settingsStartingBalance) || 0;
+		saveUserStartingBalance(newBalance);
+		
+		// If we're on January and it doesn't have a saved starting balance, update it
+		if (monthIndex === 0 && isInitialized) {
+			const savedData = loadMonthData(0);
+			if (savedData && savedData.startingBalance === undefined) {
+				setStartingBalance(newBalance);
+				saveMonthData(0, {
+					...savedData,
+					startingBalance: newBalance,
+				});
+			}
+		}
+		
+		setShowSettingsModal(false);
 	};
 
 	return (
@@ -412,6 +467,31 @@ export default function Home() {
 							<h2 className="text-sm font-semibold tracking-tight text-zinc-900">
 								Account Balance
 							</h2>
+							<button
+								type="button"
+								className="rounded-full p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+								onClick={handleOpenSettings}
+								title="Settings"
+							>
+								<svg
+									className="h-4 w-4"
+									fill="none"
+									viewBox="0 0 24 24"
+									stroke="currentColor"
+									strokeWidth={2}
+								>
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+									/>
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+									/>
+								</svg>
+							</button>
 						</header>
 
 						<div className="flex flex-col gap-4">
@@ -763,6 +843,89 @@ export default function Home() {
 					</div>
 				</section>
 			</div>
+
+			{/* Settings Modal */}
+			{showSettingsModal && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+					onClick={handleCloseSettings}
+				>
+					<div
+						className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-zinc-200"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="mb-4 flex items-center justify-between">
+							<h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+								Settings
+							</h2>
+							<button
+								type="button"
+								className="rounded-full p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+								onClick={handleCloseSettings}
+							>
+								<svg
+									className="h-5 w-5"
+									fill="none"
+									viewBox="0 0 24 24"
+									stroke="currentColor"
+								>
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M6 18L18 6M6 6l12 12"
+									/>
+								</svg>
+							</button>
+						</div>
+
+						<div className="space-y-4">
+							<div>
+								<label
+									htmlFor="starting-balance"
+									className="mb-2 block text-sm font-medium text-zinc-700"
+								>
+									Default Starting Balance (for January)
+								</label>
+								<div className="relative">
+									<span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
+										$
+									</span>
+									<input
+										id="starting-balance"
+										type="number"
+										className="w-full rounded-lg border border-zinc-300 bg-white px-8 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+										placeholder="0.00"
+										value={settingsStartingBalance}
+										onChange={(e) => setSettingsStartingBalance(e.target.value)}
+										step="0.01"
+									/>
+								</div>
+								<p className="mt-1.5 text-xs text-zinc-500">
+									This will be used as the starting balance for January. Other months will carry over from the previous month.
+								</p>
+							</div>
+
+							<div className="flex gap-2 pt-2">
+								<button
+									type="button"
+									className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+									onClick={handleCloseSettings}
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+									onClick={handleSaveSettings}
+								>
+									Save
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 		</main>
 	);
 }
